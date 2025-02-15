@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const connectDB = require('./config/db');
-require('dotenv').config();
 
 const app = express();
 
@@ -10,19 +9,26 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Connect to MongoDB
-connectDB()
-  .then(() => console.log('MongoDB connected successfully'))
-  .catch(err => console.error('MongoDB connection error:', err));
-
-// Routes
-const transactionRoutes = require('./routes/transactionRoutes');
-app.use('/api/transactions', transactionRoutes);
-
 // Health check route
 app.get('/', (req, res) => {
   res.json({ status: 'API is running' });
 });
+
+// Connect to MongoDB for each request
+app.use(async (req, res, next) => {
+  try {
+    if (!mongoose.connections[0].readyState) {
+      await connectDB();
+    }
+    next();
+  } catch (error) {
+    console.error('Database connection error:', error);
+    res.status(500).json({ error: 'Database connection failed' });
+  }
+});
+
+// Routes
+app.use('/api/transactions', require('./routes/transactionRoutes'));
 
 // Error handling
 app.use((err, req, res, next) => {
@@ -30,12 +36,13 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Handle both local and Vercel environments
+// Export for Vercel
+module.exports = app;
+
+// Start server if not in Vercel
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
 }
-
-module.exports = app;
