@@ -7,27 +7,64 @@ dotenv.config();
 
 const app = express();
 
-// Connect to database
-connectDB();
-
 // Middleware
 app.use(cors({
-  origin: '*' // For development, you can make it more specific in production
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 
-// Routes
-app.use('/api/transactions', require('./routes/transactionRoutes'));
+// Connect to MongoDB before setting up routes
+let isConnected = false;
+
+const startServer = async () => {
+  if (!isConnected) {
+    try {
+      await connectDB();
+      isConnected = true;
+    } catch (error) {
+      console.error('Failed to connect to MongoDB:', error);
+      return;
+    }
+  }
+};
+
+// Routes with database connection check
+app.use('/api/transactions', async (req, res, next) => {
+  if (!isConnected) {
+    await startServer();
+  }
+  require('./routes/transactionRoutes')(app);
+  next();
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ 
+    error: 'Something broke!',
+    message: err.message 
+  });
+});
 
 // Basic route for testing
-app.get('/', (req, res) => {
-  res.json({ message: 'API is running' });
+app.get('/', async (req, res) => {
+  try {
+    if (!isConnected) {
+      await startServer();
+    }
+    res.json({ message: 'API is running', dbStatus: isConnected ? 'connected' : 'disconnected' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Vercel serverless function handler
-if (process.env.VERCEL) {
-  module.exports = app;
-} else {
+module.exports = app;
+
+// Start server if not in Vercel
+if (!process.env.VERCEL) {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
