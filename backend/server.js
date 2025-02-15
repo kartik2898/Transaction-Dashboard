@@ -1,72 +1,41 @@
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
+const mongoose = require('mongoose');
 const connectDB = require('./config/db');
-
-dotenv.config();
+require('dotenv').config();
 
 const app = express();
 
 // Middleware
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+app.use(cors());
 app.use(express.json());
 
-// Connect to MongoDB before setting up routes
-let isConnected = false;
+// Connect to MongoDB
+connectDB()
+  .then(() => console.log('MongoDB connected successfully'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
-const startServer = async () => {
-  if (!isConnected) {
-    try {
-      await connectDB();
-      isConnected = true;
-    } catch (error) {
-      console.error('Failed to connect to MongoDB:', error);
-      return;
-    }
-  }
-};
+// Routes
+const transactionRoutes = require('./routes/transactionRoutes');
+app.use('/api/transactions', transactionRoutes);
 
-// Routes with database connection check
-app.use('/api/transactions', async (req, res, next) => {
-  if (!isConnected) {
-    await startServer();
-  }
-  require('./routes/transactionRoutes')(app);
-  next();
+// Health check route
+app.get('/', (req, res) => {
+  res.json({ status: 'API is running' });
 });
 
-// Error handling middleware
+// Error handling
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ 
-    error: 'Something broke!',
-    message: err.message 
-  });
+  console.error(err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
-// Basic route for testing
-app.get('/', async (req, res) => {
-  try {
-    if (!isConnected) {
-      await startServer();
-    }
-    res.json({ message: 'API is running', dbStatus: isConnected ? 'connected' : 'disconnected' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Vercel serverless function handler
-module.exports = app;
-
-// Start server if not in Vercel
-if (!process.env.VERCEL) {
+// Handle both local and Vercel environments
+if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
 }
+
+module.exports = app;
